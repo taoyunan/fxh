@@ -1,197 +1,338 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Steam 拼图工具</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Steam 拼图工具 - 完整版</title>
 <style>
-    body {
-        background: #1b1f27;
-        color: #fff;
-        font-family: sans-serif;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 20px;
-    }
-    h1 {
-        margin-bottom: 10px;
-    }
-    .controls {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 15px;
-    }
-    input, button {
-        padding: 8px 12px;
-        border: none;
-        border-radius: 5px;
-        font-size: 16px;
-    }
-    input {
-        flex: 1;
-        min-width: 200px;
-    }
-    button {
-        background: #4cafef;
-        color: white;
-        cursor: pointer;
-        transition: background 0.2s;
-    }
-    button:hover {
-        background: #369bd6;
-    }
-    #canvas-container {
-        border: 2px solid #333;
-        background: #222;
-        position: relative;
-        overflow: hidden;
-    }
-    canvas {
-        display: block;
-    }
-    .slider-container {
-        margin-top: 10px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    input[type="range"] {
-        width: 200px;
-    }
+  body {
+    background: #1b1f27;
+    color: #fff;
+    font-family: "微软雅黑", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+  }
+  h1 {
+    margin-bottom: 15px;
+  }
+  .controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    width: 100%;
+    max-width: 600px;
+  }
+  input, button {
+    padding: 10px 15px;
+    font-size: 16px;
+    border: none;
+    border-radius: 5px;
+    outline: none;
+  }
+  input {
+    flex: 1;
+  }
+  button {
+    background: #4cafef;
+    color: white;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s;
+  }
+  button:hover {
+    background: #369bd6;
+  }
+  #canvas-container {
+    border: 2px solid #333;
+    background: #222;
+    width: 1200px;
+    height: 278px;
+    position: relative;
+  }
+  canvas {
+    display: block;
+    user-select: none;
+    cursor: grab;
+  }
+  .slider-container {
+    margin-top: 15px;
+    width: 600px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #ddd;
+  }
+  input[type="range"] {
+    flex: 1;
+  }
+  #error {
+    margin-top: 15px;
+    color: #f44336;
+    font-weight: bold;
+    min-height: 1.5em;
+  }
+  #loading {
+    margin-top: 10px;
+    color: #66ccff;
+  }
 </style>
 </head>
 <body>
-<h1>Steam 拼图工具</h1>
+
+<h1>Steam 拼图工具 - 完整版</h1>
+
 <div class="controls">
-    <input id="appId" placeholder="输入 Steam App ID">
-    <button id="fetchBtn">获取并合成</button>
-    <button id="saveBtn">保存图片</button>
+  <input id="appId" placeholder="请输入 Steam App ID，例如：2962810" />
+  <button id="fetchBtn">获取并合成</button>
+  <button id="saveBtn" disabled>保存图片</button>
 </div>
+
 <div id="canvas-container">
-    <canvas id="heroCanvas" width="1200" height="278"></canvas>
+  <canvas id="heroCanvas" width="1200" height="278" title="拖动Logo微调位置"></canvas>
 </div>
+
 <div class="slider-container">
-    <label>缩放 Logo</label>
-    <input type="range" id="scaleSlider" min="10" max="200" value="100">
+  <label for="scaleSlider">缩放 Logo:</label>
+  <input type="range" id="scaleSlider" min="10" max="200" value="100" disabled />
+  <span id="scalePercent">100%</span>
 </div>
+
+<div id="loading"></div>
+<div id="error"></div>
 
 <script>
-const API_BASE = 'https://api.steamcmd.net/v1/info/';
-const IMG_BASE = 'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/';
+  const API_BASE = "https://api.steamcmd.net/v1/info/";
+  const IMG_BASE = "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/";
 
-const canvas = document.getElementById('heroCanvas');
-const ctx = canvas.getContext('2d');
-let heroImg = new Image();
-let logoImg = new Image();
-let logoX = 0, logoY = 0;
-let logoScale = 1;
-let dragging = false;
-let dragOffsetX = 0, dragOffsetY = 0;
+  const canvas = document.getElementById("heroCanvas");
+  const ctx = canvas.getContext("2d");
+  const errorBox = document.getElementById("error");
+  const loadingBox = document.getElementById("loading");
+  const scaleSlider = document.getElementById("scaleSlider");
+  const scalePercent = document.getElementById("scalePercent");
+  const saveBtn = document.getElementById("saveBtn");
 
-async function fetchData(appId) {
-    const res = await fetch(API_BASE + appId);
-    if (!res.ok) throw new Error('API 请求失败');
-    const data = await res.json();
-    const appData = data.data[appId];
-    if (!appData) throw new Error('未找到游戏数据');
-    
-    const lang = appData.library_assets.library_hero.image.schinese ? 'schinese' : 'english';
-    
-    const heroPath = appData.library_assets.library_hero.image[lang];
-    const logoPath = appData.library_assets.library_logo.image[lang];
-    const pos = appData.library_assets.logo_position;
+  let heroImg = new Image();
+  let logoImg = new Image();
 
-    heroImg.crossOrigin = 'anonymous';
-    heroImg.src = `${IMG_BASE}${appId}/${heroPath}`;
-    
-    logoImg.crossOrigin = 'anonymous';
-    logoImg.src = `${IMG_BASE}${appId}/${logoPath}`;
+  // logo 在 canvas 上的位置和缩放比例
+  let logoX = 0;
+  let logoY = 0;
+  let logoScale = 1;
 
-    await Promise.all([
-        new Promise(r => heroImg.onload = r),
-        new Promise(r => logoImg.onload = r)
-    ]);
+  // 拖拽状态
+  let dragging = false;
+  let dragOffsetX = 0;
+  let dragOffsetY = 0;
 
-    // 绘制 hero 并调整比例
+  function clearError() {
+    errorBox.textContent = "";
+  }
+  function showError(msg) {
+    errorBox.textContent = msg;
+  }
+  function setLoading(msg) {
+    loadingBox.textContent = msg;
+  }
+  function clearLoading() {
+    loadingBox.textContent = "";
+  }
+
+  // 绘制hero图，裁剪成1200x278比例，填满canvas（等比放大，只能大不能小）
+  function drawHero(img) {
+    const cw = canvas.width;
+    const ch = canvas.height;
+    ctx.clearRect(0, 0, cw, ch);
+
+    const scale = Math.max(cw / img.width, ch / img.height);
+    const w = img.width * scale;
+    const h = img.height * scale;
+    const x = (cw - w) / 2;
+    const y = (ch - h) / 2;
+
+    ctx.drawImage(img, x, y, w, h);
+  }
+
+  // 绘制logo图
+  function drawLogo() {
+    if (!logoImg.complete) return;
+    const w = logoImg.width * logoScale;
+    const h = logoImg.height * logoScale;
+    ctx.drawImage(logoImg, logoX, logoY, w, h);
+  }
+
+  // 绘制全部
+  function drawAll() {
     drawHero(heroImg);
+    drawLogo();
+  }
 
-    // 根据 logo_position 计算初始位置
-    const logoWidth = canvas.width * (parseFloat(pos.width_pct) / 100);
-    const logoHeight = logoWidth * (logoImg.height / logoImg.width);
-    logoScale = logoWidth / logoImg.width;
+  // 根据logo_position和canvas尺寸计算logo初始坐标和缩放
+  function initLogoPosition(logoPos) {
+    const cw = canvas.width;
+    const ch = canvas.height;
 
-    if (pos.pinned_position.toLowerCase().includes('bottom')) {
-        logoY = canvas.height - logoHeight;
-    } else {
-        logoY = 0;
+    const widthPct = parseFloat(logoPos.width_pct);
+    const heightPct = parseFloat(logoPos.height_pct); // 可能暂时没用到高度百分比
+    const pinned = (logoPos.pinned_position || "").toLowerCase();
+
+    const targetLogoWidth = (widthPct / 100) * cw;
+    const aspectRatio = logoImg.height / logoImg.width;
+    const targetLogoHeight = targetLogoWidth * aspectRatio;
+
+    logoScale = targetLogoWidth / logoImg.width;
+
+    // 根据锚点设定位置
+    logoX = pinned.includes("right") ? cw - targetLogoWidth : 0;
+    logoY = pinned.includes("bottom") ? ch - targetLogoHeight : 0;
+
+    scaleSlider.value = Math.round(logoScale * 100);
+    scalePercent.textContent = `${Math.round(logoScale * 100)}%`;
+    scaleSlider.disabled = false;
+    saveBtn.disabled = false;
+  }
+
+  // 事件绑定：拖拽logo微调
+  canvas.addEventListener("mousedown", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const w = logoImg.width * logoScale;
+    const h = logoImg.height * logoScale;
+    if (mx >= logoX && mx <= logoX + w && my >= logoY && my <= logoY + h) {
+      dragging = true;
+      dragOffsetX = mx - logoX;
+      dragOffsetY = my - logoY;
+      canvas.style.cursor = "grabbing";
     }
-    if (pos.pinned_position.toLowerCase().includes('right')) {
-        logoX = canvas.width - logoWidth;
-    } else {
-        logoX = 0;
-    }
+  });
+  canvas.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const rect = canvas.getBoundingClientRect();
+    let mx = e.clientX - rect.left;
+    let my = e.clientY - rect.top;
+
+    logoX = mx - dragOffsetX;
+    logoY = my - dragOffsetY;
+
+    // 限制logo不要超出canvas边界
+    const maxX = canvas.width - logoImg.width * logoScale;
+    const maxY = canvas.height - logoImg.height * logoScale;
+    if (logoX < 0) logoX = 0;
+    else if (logoX > maxX) logoX = maxX;
+    if (logoY < 0) logoY = 0;
+    else if (logoY > maxY) logoY = maxY;
 
     drawAll();
-}
+  });
+  canvas.addEventListener("mouseup", () => {
+    dragging = false;
+    canvas.style.cursor = "grab";
+  });
+  canvas.addEventListener("mouseleave", () => {
+    dragging = false;
+    canvas.style.cursor = "grab";
+  });
 
-function drawHero(img) {
-    const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
-    const x = (canvas.width - img.width * scale) / 2;
-    const y = (canvas.height - img.height * scale) / 2;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
-}
+  // 缩放滑块控制logo大小
+  scaleSlider.addEventListener("input", (e) => {
+    const val = e.target.value;
+    logoScale = val / 100;
+    scalePercent.textContent = `${val}%`;
 
-function drawAll() {
-    drawHero(heroImg);
-    ctx.drawImage(logoImg, logoX, logoY, logoImg.width * logoScale, logoImg.height * logoScale);
-}
+    // 限制拖拽位置在边界内
+    const maxX = canvas.width - logoImg.width * logoScale;
+    const maxY = canvas.height - logoImg.height * logoScale;
+    if (logoX > maxX) logoX = maxX;
+    if (logoY > maxY) logoY = maxY;
+    if (logoX < 0) logoX = 0;
+    if (logoY < 0) logoY = 0;
 
-document.getElementById('fetchBtn').addEventListener('click', () => {
-    const id = document.getElementById('appId').value.trim();
-    if (id) {
-        fetchData(id).catch(err => alert(err.message));
-    }
-});
+    drawAll();
+  });
 
-document.getElementById('saveBtn').addEventListener('click', () => {
+  // 保存当前canvas内容为图片
+  saveBtn.addEventListener("click", () => {
+    const link = document.createElement("a");
+    link.download = `steam_${document.getElementById("appId").value.trim()}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  });
+
+  // 核心：根据appId拉取数据，处理图片
+  async function fetchData(appId) {
+    clearError();
+    setLoading("加载中，请稍候...");
+    saveBtn.disabled = true;
+    scaleSlider.disabled = true;
+
     try {
-        const link = document.createElement('a');
-        link.download = 'steam_hero.png';
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-    } catch {
-        alert('保存失败，可能是图片服务器禁止跨域。');
-    }
-});
+      const res = await fetch(API_BASE + appId);
+      if (!res.ok) throw new Error(`API 请求失败，状态码: ${res.status}`);
 
-canvas.addEventListener('mousedown', e => {
-    const mx = e.offsetX;
-    const my = e.offsetY;
-    const lw = logoImg.width * logoScale;
-    const lh = logoImg.height * logoScale;
-    if (mx >= logoX && mx <= logoX + lw && my >= logoY && my <= logoY + lh) {
-        dragging = true;
-        dragOffsetX = mx - logoX;
-        dragOffsetY = my - logoY;
-    }
-});
-canvas.addEventListener('mousemove', e => {
-    if (dragging) {
-        logoX = e.offsetX - dragOffsetX;
-        logoY = e.offsetY - dragOffsetY;
-        drawAll();
-    }
-});
-canvas.addEventListener('mouseup', () => dragging = false);
-canvas.addEventListener('mouseleave', () => dragging = false);
+      const json = await res.json();
+      const appData = json.data?.[appId];
+      if (!appData) throw new Error("未找到游戏数据");
 
-document.getElementById('scaleSlider').addEventListener('input', e => {
-    const pct = parseInt(e.target.value);
-    logoScale = pct / 100;
-    drawAll();
-});
+      const assetsFull = appData.common?.library_assets_full;
+      if (!assetsFull) throw new Error("缺少 library_assets_full 数据");
+
+      // 语言优先用简体中文，没有就用英文
+      let lang = "schinese";
+      if (
+        !assetsFull.library_hero?.image?.[lang] &&
+        !assetsFull.library_logo?.image?.[lang]
+      ) {
+        lang = "english";
+      }
+
+      const heroPath = assetsFull.library_hero?.image?.[lang];
+      const logoPath = assetsFull.library_logo?.image?.[lang];
+      if (!heroPath) throw new Error("未找到 library_hero 图片路径");
+      if (!logoPath) throw new Error("未找到 library_logo 图片路径");
+
+      const logoPos =
+        assetsFull.library_logo?.logo_position ||
+        appData.common.library_assets?.logo_position;
+      if (!logoPos) throw new Error("缺少 logo_position 数据");
+
+      // 加载图片
+      heroImg = new Image();
+      heroImg.crossOrigin = "anonymous";
+      heroImg.src = IMG_BASE + appId + "/" + heroPath;
+
+      logoImg = new Image();
+      logoImg.crossOrigin = "anonymous";
+      logoImg.src = IMG_BASE + appId + "/" + logoPath;
+
+      await Promise.all([
+        new Promise((resolve) => (heroImg.onload = resolve)),
+        new Promise((resolve) => (logoImg.onload = resolve)),
+      ]);
+
+      drawHero(heroImg);
+      initLogoPosition(logoPos);
+      drawAll();
+
+      clearLoading();
+    } catch (e) {
+      showError(e.message || "未知错误");
+      clearLoading();
+    }
+  }
+
+  // 绑定按钮事件
+  document.getElementById("fetchBtn").addEventListener("click", () => {
+    const id = document.getElementById("appId").value.trim();
+    if (!id) {
+      showError("请输入有效的 Steam App ID");
+      return;
+    }
+    fetchData(id);
+  });
 </script>
+
 </body>
 </html>
