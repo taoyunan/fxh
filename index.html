@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Steam 拼图工具</title>
+<style>
+    body {
+        background: #1b1f27;
+        color: #fff;
+        font-family: sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+    }
+    h1 {
+        margin-bottom: 10px;
+    }
+    .controls {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+    input, button {
+        padding: 8px 12px;
+        border: none;
+        border-radius: 5px;
+        font-size: 16px;
+    }
+    input {
+        flex: 1;
+        min-width: 200px;
+    }
+    button {
+        background: #4cafef;
+        color: white;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    button:hover {
+        background: #369bd6;
+    }
+    #canvas-container {
+        border: 2px solid #333;
+        background: #222;
+        position: relative;
+        overflow: hidden;
+    }
+    canvas {
+        display: block;
+    }
+    .slider-container {
+        margin-top: 10px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    input[type="range"] {
+        width: 200px;
+    }
+</style>
+</head>
+<body>
+<h1>Steam 拼图工具</h1>
+<div class="controls">
+    <input id="appId" placeholder="输入 Steam App ID">
+    <button id="fetchBtn">获取并合成</button>
+    <button id="saveBtn">保存图片</button>
+</div>
+<div id="canvas-container">
+    <canvas id="heroCanvas" width="1200" height="278"></canvas>
+</div>
+<div class="slider-container">
+    <label>缩放 Logo</label>
+    <input type="range" id="scaleSlider" min="10" max="200" value="100">
+</div>
+
+<script>
+const API_BASE = 'https://api.steamcmd.net/v1/info/';
+const IMG_BASE = 'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/';
+
+const canvas = document.getElementById('heroCanvas');
+const ctx = canvas.getContext('2d');
+let heroImg = new Image();
+let logoImg = new Image();
+let logoX = 0, logoY = 0;
+let logoScale = 1;
+let dragging = false;
+let dragOffsetX = 0, dragOffsetY = 0;
+
+async function fetchData(appId) {
+    const res = await fetch(API_BASE + appId);
+    if (!res.ok) throw new Error('API 请求失败');
+    const data = await res.json();
+    const appData = data.data[appId];
+    if (!appData) throw new Error('未找到游戏数据');
+    
+    const lang = appData.library_assets.library_hero.image.schinese ? 'schinese' : 'english';
+    
+    const heroPath = appData.library_assets.library_hero.image[lang];
+    const logoPath = appData.library_assets.library_logo.image[lang];
+    const pos = appData.library_assets.logo_position;
+
+    heroImg.crossOrigin = 'anonymous';
+    heroImg.src = `${IMG_BASE}${appId}/${heroPath}`;
+    
+    logoImg.crossOrigin = 'anonymous';
+    logoImg.src = `${IMG_BASE}${appId}/${logoPath}`;
+
+    await Promise.all([
+        new Promise(r => heroImg.onload = r),
+        new Promise(r => logoImg.onload = r)
+    ]);
+
+    // 绘制 hero 并调整比例
+    drawHero(heroImg);
+
+    // 根据 logo_position 计算初始位置
+    const logoWidth = canvas.width * (parseFloat(pos.width_pct) / 100);
+    const logoHeight = logoWidth * (logoImg.height / logoImg.width);
+    logoScale = logoWidth / logoImg.width;
+
+    if (pos.pinned_position.toLowerCase().includes('bottom')) {
+        logoY = canvas.height - logoHeight;
+    } else {
+        logoY = 0;
+    }
+    if (pos.pinned_position.toLowerCase().includes('right')) {
+        logoX = canvas.width - logoWidth;
+    } else {
+        logoX = 0;
+    }
+
+    drawAll();
+}
+
+function drawHero(img) {
+    const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
+    const x = (canvas.width - img.width * scale) / 2;
+    const y = (canvas.height - img.height * scale) / 2;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+}
+
+function drawAll() {
+    drawHero(heroImg);
+    ctx.drawImage(logoImg, logoX, logoY, logoImg.width * logoScale, logoImg.height * logoScale);
+}
+
+document.getElementById('fetchBtn').addEventListener('click', () => {
+    const id = document.getElementById('appId').value.trim();
+    if (id) {
+        fetchData(id).catch(err => alert(err.message));
+    }
+});
+
+document.getElementById('saveBtn').addEventListener('click', () => {
+    try {
+        const link = document.createElement('a');
+        link.download = 'steam_hero.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    } catch {
+        alert('保存失败，可能是图片服务器禁止跨域。');
+    }
+});
+
+canvas.addEventListener('mousedown', e => {
+    const mx = e.offsetX;
+    const my = e.offsetY;
+    const lw = logoImg.width * logoScale;
+    const lh = logoImg.height * logoScale;
+    if (mx >= logoX && mx <= logoX + lw && my >= logoY && my <= logoY + lh) {
+        dragging = true;
+        dragOffsetX = mx - logoX;
+        dragOffsetY = my - logoY;
+    }
+});
+canvas.addEventListener('mousemove', e => {
+    if (dragging) {
+        logoX = e.offsetX - dragOffsetX;
+        logoY = e.offsetY - dragOffsetY;
+        drawAll();
+    }
+});
+canvas.addEventListener('mouseup', () => dragging = false);
+canvas.addEventListener('mouseleave', () => dragging = false);
+
+document.getElementById('scaleSlider').addEventListener('input', e => {
+    const pct = parseInt(e.target.value);
+    logoScale = pct / 100;
+    drawAll();
+});
+</script>
+</body>
+</html>
