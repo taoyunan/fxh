@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Steam 拼图工具 - 完整版（带吸附+行间距+同步拖动）</title>
+<title>Steam 拼图工具 - 完整版（带吸附+行间距+同步拖动+默认文字）</title>
 <style>
   body {
     background: #1b1f27;
@@ -118,7 +118,8 @@
   <h3>使用教程：</h3>
   <ul>
     <li>输入 Steam App ID 点击“获取并合成”加载背景和 Logo。</li>
-    <li>可以输入自定义文字（支持多行），调整颜色、字号、字体和行间距。</li>
+    <li>默认文字会填充为 <code>3DM《游戏名》专区</code>，可自行修改。</li>
+    <li>可以输入多行文字，调整颜色、字号、字体和行间距。</li>
     <li>用鼠标拖动 Logo 或文字来改变位置。</li>
     <li><b>自动吸附：</b>拖动到画布水平/垂直中心附近会自动对齐。</li>
     <li><b>同步拖动：</b>按住 Shift 键拖动任意一个元素，Logo 和文字会一起移动。</li>
@@ -146,7 +147,7 @@
   let textX = 20, textY = 20, lineSpacing = 5;
 
   let dragging = false;
-  let dragTarget = null; // "logo" | "text" | "both"
+  let dragTarget = null;
   let dragOffsetX = 0, dragOffsetY = 0;
 
   function clearError() { errorBox.textContent = ""; }
@@ -210,7 +211,6 @@
     const logoW = logoImg.width * logoScale, logoH = logoImg.height * logoScale;
     const textW = ctx.measureText(customText.split("\n")[0] || "").width;
     const textH = customText.split("\n").length * (textSize + lineSpacing) - lineSpacing;
-
     if (e.shiftKey) {
       dragTarget = "both";
       dragOffsetX = mx - logoX;
@@ -268,12 +268,14 @@
     scalePercent.textContent = `${e.target.value}%`;
     drawAll();
   });
+
   saveBtn.addEventListener("click", () => {
     const link = document.createElement("a");
     link.download = `steam_${document.getElementById("appId").value.trim()}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
   });
+
   document.getElementById("customText").addEventListener("input", (e) => { customText = e.target.value; drawAll(); });
   document.getElementById("textColor").addEventListener("input", (e) => { textColor = e.target.value; drawAll(); });
   document.getElementById("textSize").addEventListener("input", (e) => { textSize = parseInt(e.target.value, 10); drawAll(); });
@@ -288,6 +290,14 @@
       const json = await res.json();
       const appData = json.data?.[appId];
       if (!appData) throw new Error("未找到游戏数据");
+
+      // 自动填充默认文字
+      let gameName = appData.common?.name_localized?.sc_schinese 
+                  || appData.common?.metacritic_name 
+                  || "";
+      customText = `3DM《${gameName}》专区`;
+      document.getElementById("customText").value = customText;
+
       const assetsFull = appData.common?.library_assets_full;
       if (!assetsFull) throw new Error("缺少 library_assets_full 数据");
       let lang = "schinese";
@@ -304,6 +314,7 @@
       drawHero(heroImg); initLogoPosition(logoPos); drawAll(); clearLoading();
     } catch (e) { showError(e.message || "未知错误"); clearLoading(); }
   }
+
   document.getElementById("fetchBtn").addEventListener("click", () => {
     const id = document.getElementById("appId").value.trim();
     if (!id) { showError("请输入有效的 Steam App ID"); return; }
