@@ -303,7 +303,7 @@
   const IMG_BASE = "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/";
   const snapThreshold = 10;
 
-  const canvas = document.getElementById("Canvas");
+  const canvas = document.getElementById("heroCanvas");
   const ctx = canvas.getContext("2d");
   const errorBox = document.getElementById("error");
   const loadingBox = document.getElementById("loading");
@@ -318,10 +318,6 @@
   let logoX = 0, logoY = 0, logoScale = 1;
   let customText = "", textColor = "#ffffff", textSize = 24, textFont = "微软雅黑";
   let textX = 20, textY = 20, lineSpacing = 5;
-  let lang = "schinese";
-if (!assetsFull.library_hero?.image?.schinese && !assetsFull.library_logo?.image?.schinese) {
-    lang = "english";
-}
 
   // 背景渐变黑强度（0~1）
   let overlayOpacity = 0.4;
